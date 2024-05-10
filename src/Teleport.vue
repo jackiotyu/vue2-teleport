@@ -19,12 +19,10 @@ export default {
     disabled: Boolean,
   },
   data() {
-    return {
-      nodes: [],
-      waiting: false,
-      observer: null,
-      parent: null,
-    };
+    this.nodes = [];
+    this.observer = null;
+    this.parent = null;
+    return {}
   },
   watch: {
     to: 'maybeMove',
@@ -32,7 +30,10 @@ export default {
     disabled(value) {
       if (value) {
         this.disable();
-        this.teardownObserver();
+        // Ensure all event done.
+        this.$nextTick(() => {
+          this.teardownObserver();
+        });
       } else {
         this.bootObserver();
         this.move();
@@ -51,6 +52,9 @@ export default {
     this.maybeMove();
   },
   beforeDestroy() {
+    // Fix node reference
+    this.nodes = this.getComponentChildrenNode();
+
     // Move back
     this.disable();
 
@@ -73,15 +77,9 @@ export default {
       }
     },
     move() {
-      this.waiting = false;
-
       this.parent = document.querySelector(this.to);
-
       if (!this.parent) {
         this.disable();
-
-        this.waiting = true;
-
         return;
       }
 
@@ -104,53 +102,19 @@ export default {
 
       return fragment;
     },
-    onMutations(mutations) {
-      // Makes sure the move operation is only done once
-      let shouldMove = false;
-
-      for (let i = 0; i < mutations.length; i++) {
-        const mutation = mutations[i];
-        const filteredAddedNodes = Array.from(mutation.addedNodes).filter(node => !this.nodes.includes(node));
-
-        if (Array.from(mutation.removedNodes).includes(this.parent)) {
-          this.disable();
-          this.waiting = !this.disabled;
-        } else if (this.waiting && filteredAddedNodes.length > 0) {
-          shouldMove = true;
-        }
-      }
-
-      if (shouldMove) {
-        this.move();
-      }
-    },
     bootObserver() {
       if (this.observer) {
         return;
       }
-
-      this.observer = new MutationObserver(mutations => this.onMutations(mutations));
-
-      this.observer.observe(document.body, {
-        childList: true,
-        subtree: true,
-        attributes: false,
-        characterData: false,
-      });
-
-      if (this.childObserver) {
-        return;
-      }
       // watch childNodes change
-      this.childObserver = new MutationObserver(mutations => {
-        const childChangeRecord = mutations.find(i => i.target === this.$el);
-        if (childChangeRecord) {
-          this.nodes = Array.from(this.$el.childNodes);
-          this.maybeMove();
-        }
+      this.observer = new MutationObserver((mutations) => {
+        // Remove old nodes before update position.
+        this.getFragment();
+        this.nodes = this.getComponentChildrenNode();
+        this.maybeMove();
       });
 
-      this.childObserver.observe(this.$el, {
+      this.observer.observe(this.$el, {
         childList: true,
         subtree: false,
         attributes: false,
@@ -162,10 +126,9 @@ export default {
         this.observer.disconnect();
         this.observer = null;
       }
-      if (this.childObserver) {
-        this.childObserver.disconnect();
-        this.childObserver = null;
-      }
+    },
+    getComponentChildrenNode() {
+      return this.$vnode.componentOptions.children.map((i) => i.elm).filter((i) => i);
     },
   },
 };
